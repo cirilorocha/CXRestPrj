@@ -1,0 +1,748 @@
+#INCLUDE 'RWMake.ch'
+#INCLUDE 'Totvs.ch'
+#INCLUDE 'ParmType.ch'
+
+Static _cVersao		:= '1.16'						AS Character
+Static _cDtVersao	:= '18/09/2025'					AS Character
+
+#DEFINE _LINHA_			StrZero(ProcLine(),5)
+#DEFINE _NomeProg_		RetFileName(ProcSource())
+#DEFINE _MsgLinha_		_NomeProg_+'('+_LINHA_+')'
+
+#xTranslate _FieldGet(<cCampo>) => ;
+	FieldGet(FieldPos(<cCampo>))
+
+#xTranslate _FieldPut(<cCampo>,<uConteudo>) => ;
+	FieldPut(FieldPos(<cCampo>),<uConteudo>)
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} CXRestPrj
+@description	Restaura um projeto Protheus a partir de um pacote de atualização (TXT UpdDistr)
+@autor			Cirilo Rocha
+@since			03/08/2025
+@obs			Arquivos de menu ainda não são tratados (MNUPACK.TXT), pode importar diretamente pelo CFG
+				Se as tabelas X31## não existirem ocorrerá um erro, elas precisam existir previamente
+/*/
+//-------------------------------------------------------------------------------------------------
+User Function CXRestPrj()
+
+	If Select('SX2') == 0	//-- Ambiente não aberto, faz a carga
+		sfAbreAmbiente({|| sfRestPrj(), oMainWnd:End()	})
+	Else
+		sfRestPrj()
+	EndIf
+
+Return
+//-------------------------------------------------------------------------------------------------
+Static Function sfRestPrj()							AS Logical
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local cArquivos	:= ''							AS Character
+	Local lOK		:= .T.							AS Logical
+
+	Private cPathTmp := '\temp\'+GetNextAlias()+'\'	AS Character
+	Private aTabSX	:= { 'SIX','SX1','SX2','SX3';
+						,'SX5','SX6','SX7','SXA';
+						,'SXB','SXQ','XXA','XAL';
+						,'XAM' }					AS Array
+	Private aArquivos	:= {}						AS Array
+	Private jHelp		:= JsonObject():New()		AS Json
+
+	Private cPCK_DESC	:= ''						AS Character
+	Private dPCK_DTCRIA	:= CtoD('')					AS Date
+	Private cPCK_HRCRIA	:= ''						AS Character
+	Private cPCK_VERSAO	:= ''						AS Character
+	Private cPCK_RELEAS	:= ''						AS Character
+
+	Private nP_SDFBRA	:= 0						AS Numeric
+	Private nP_HLPPOR	:= 0						AS Numeric
+	Private nP_HLPESP	:= 0						AS Numeric
+	Private nP_HLPENG	:= 0						AS Numeric
+	Private cTxtSXs		:= ''						AS Character
+	Private cJsonHLP	:= ''						AS Character
+
+	//-- Apaga as tabelas SX temporárias --------------------------------------
+	If .Not. sfApagaSX()
+		FwAlertError('Não foi possível apagar as tabelas temporárias SX.',_MsgLinha_)
+		Return .F.
+	EndIf
+
+	//-- Seleciona os pacotes de atualização ----------------------------------
+	cArquivos	:= sfGetProjeto()
+	If Empty(cArquivos)
+		FwAlertError('Nenhum arquivo selecionado.',_MsgLinha_)
+		Return .F.
+	EndIf
+	aArquivos	:= sfSeparaArq(cArquivos)
+
+	If ( nP_SDFBRA := aScan(aArquivos, {|x| Right(Upper(x),10) == 'SDFBRA.TXT' })) == 0
+		FwAlertError('Arquivo SDFBRA.TXT não encontrado.',_MsgLinha_)
+		Return .F.
+	EndIf
+
+	If ( nP := aScan(aArquivos, {|x| Right(Upper(x),11) == 'MNUPACK.TXT' })) > 0 .And. ;
+		.Not. Empty( sfReadFile(aArquivos[nP]) )
+		FwAlertWarning(	'<H3>Esta rotina não implementa a importação de menus.'+CRLF+;
+						'O arquivo MNUPACK.TXT não será lido e tratado.</H3>',_MsgLinha_)
+	EndIf
+	
+	nP_HLPPOR := aScan(aArquivos, {|x| Right(Upper(x),12) == 'HLPDFPOR.TXT' })
+	nP_HLPESP := aScan(aArquivos, {|x| Right(Upper(x),12) == 'HLPDFSPA.TXT' })
+	nP_HLPENG := aScan(aArquivos, {|x| Right(Upper(x),12) == 'HLPDFENG.TXT' })
+
+	//-- Copiar arquivo sdfbra.txt para o diretório temporário
+	If 	.Not. ExistDir(cPathTmp) .And. ;
+		.Not. FWMakeDir( cPathTmp , .T.)		//-- Cria o diretório temporário
+		lOK := .F.
+	ElseIf 	File(cPathTmp+'SXSBRA.TXT') .And. ;
+			fErase(cPathTmp+'SXSBRA.TXT')		//-- Apaga o arquivo temporário se existir
+		FwAlertError('Não foi possível apagar o arquivo temporário SXSBRA.TXT.',_MsgLinha_)
+		lOK := .F.
+	Else
+		FWMsgRun(,{|| lOK	:= CpyT2S( aArquivos[nP_SDFBRA], cPathTmp ,.F.,.F.,200000)},_MsgLinha_+' - Copiando arquivo SDFBRA.TXT','Aguarde...')
+		If 	.Not. lOK
+			FwAlertError('Não foi possível copiar o arquivo SDFBRA.TXT para o diretório temporário.',_MsgLinha_)
+			lOK := .F.
+		ElseIf 	fRename(cPathTmp+'SDFBRA.TXT', cPathTmp+'SXSBRA.TXT')
+			FwAlertError('Não foi possível renomear o arquivo SDFBRA.TXT para SXSBRA.TXT.',_MsgLinha_)
+			lOK := .F.
+		EndIf
+	EndIf
+
+	//-- Lê o arquivo SDFBRA.TXT ----------------------------------------------
+	If 	lOK
+		FWMsgRun(,{|| lOK	:= sfLerSDFBra()},_MsgLinha_+' - Lendo arquivo SDFBRA.TXT','Aguarde...')
+	EndIf
+	
+	//-- Lê o arquivo HLPDFPOR.TXT ----------------------------------------------
+	If 	lOK
+		FWMsgRun(,{|| lOK	:= sfLerHLPDF()},_MsgLinha_+' - Lendo arquivos de ajuda','Aguarde...')
+	EndIf
+
+	//-- Extrair tabelas SX ----------------------------------------------
+	If lOK
+		Processa( {|| sfExtrairDic() },_MsgLinha_+' - Extraindo SXs', 'Aguarde...', .F. )
+	EndIf
+
+	//-- Grava as tabelas do projeto -------------------------------------
+	If lOK
+		FwMsgRun(,{|| sfGravaProjeto()},_MsgLinha_+' - Gravando projeto','Aguarde...')
+	EndIf
+
+	//-- apagar diretório temporário -----------------------------------
+	FWMsgRun(,{|| FWDirRemove(cPathTmp,.F.,.T.) },_MsgLinha_+' - Apagando arquivos temporários','Aguarde...')	//-- Apaga o diretório temporário
+
+Return
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfGetProjeto
+@description	Função para selecionar os arquivos de projeto
+@autor			Cirilo Rocha
+@since			02/08/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfGetProjeto()						AS Character
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local aRet										AS Array
+	Local cRet										AS Character
+	Local cDirInicial	:= 'C:\Protheus\'			AS Character
+	Local cProfSecao:= RetFileName(ProcSource())	AS Character
+	Local cProfChave:= ProcName()					AS Character
+	Local cMascara	:= '*.txt'						AS Character	//-- Mascara e Salvar não devem ser informados com diretórios e tFileDialog
+	Local lSalvar	:= .F.							AS Logical
+	Local nOpcoes	:= nOR(GETF_LOCALHARD,GETF_NETWORKDRIVE,GETF_MULTISELECT)	AS Numeric
+
+	Local cDrive,cDir,cFile,cExten					AS Character
+
+	//-------------------------------------------------------------------------
+	cDir	:= fwGetProfString(cProfSecao,cProfChave,cDirInicial,.T.)	//-- Carrega último caminho utilizado
+
+	cRet    := tFileDialog(	cMascara											,;	//01 cMascara
+							_MsgLinha_+' Os pacotes para atualização: '			,;	//02 cTitulo
+							1													,;	//03 nDef
+							IIf(ExistDir(cDir),cDir,cDirInicial)				,;	//04 cDirInicial
+							lSalvar												,;	//05 lSalvar
+							nOpcoes	    										)	//06 nOpcoes
+	
+	//-- Tratamento de erros para WebApp (pode não ser necessário no futuro)
+	aRet	:= sfSeparaArq(cRet)
+	SplitPath( aRet[1] , @cDrive, @cDir, @cFile, @cExten )
+	If BitAnd(nOpcoes,GETF_RETDIRECTORY)		//-- Diretórios
+		If .Not. ExistDir(cRet)
+			FwAlertError('Diretório informado '+cRet+' NÃO existe.',_MsgLinha_)
+			cRet	:= ''
+		EndIf		
+	ElseIf .Not. Empty(cRet)					//-- Arquivos
+		If Empty(cFile)
+			FwAlertError('Nenhum nome de arquivo informado.',_MsgLinha_)
+			cRet	:= ''
+		ElseIf 	.Not. lSalvar .And. ;
+				.Not. File(aRet[1])				//-- Valida se arquivo existe
+			FwAlertError('Arquivo informado '+cRet+' NÃO existe.',_MsgLinha_)
+			cRet	:= ''
+		EndIf
+	EndIf
+	
+	//-- Remove os caracteres especiais se houver
+	If lSalvar
+		cFile	:= FwNoAccent(cFile)
+		cRet	:= cDrive+cDir+cFile+cExten
+	EndIf
+
+	//-- Salva o diretório atual que o usuário utilizou -----------------------
+	If .Not. Empty(cRet)
+		fwWriteProfString(cProfSecao,cProfChave,cDrive+cDir,.T.) //-- Guarda o diretório atual
+	EndIf
+
+Return cRet
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfSeparaArq
+@description	Função para quebrar a lista de arquivos da função tFileDialog, quando multiseleção
+				 para conseguir identificar arquivos que contenham ; no nome.                     
+@autor			Cirilo Rocha
+@since			28/07/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfSeparaArq(cArquivos	AS Character);	//01 cArquivos
+													AS Array
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local aArquivos	:= {}							AS Array
+	Local nPAtu										AS Integer
+	Local nPQueb									AS Integer
+	Local nPFim										AS Integer
+
+	//-- Parâmetros da Rotina -------------------------------------------------
+	ParamType 0		VAR cArquivos		AS Character
+
+	//---------------------------------------------------------------------------------------------
+	////TESTE WINDOWS
+	//cArquivos:=	"c:\temp\carlitolima13.jpg;"+;
+	//			"c:\temp\erro.log;"+;
+	//			"c:\temp\getfols-1200 - 2022-12-12-08;47;27.jpg;"+;
+	//			"c:\temp\rgperc29 - 2022-12-08-17;18;29.sql"
+	////TESTE LINUX
+	//cArquivos:=	"/tmp/carlitolima13.jpg;"+;
+	//			"/tmp/erro.log;"+;
+	//			"/tmp/getfols-1200 - 2022-12-12-08;47;27.jpg;"+;
+	//			"/tmp/rgperc29 - 2022-12-08-17;18;29.sql"
+
+	//---------------------------------------------------------------------------------------------
+	If At(' | ',cArquivos)	//cGetFile antiga
+		aArquivos	:= StrTokArr2(cArquivos,' | ',.F.)
+	Else
+		nPAtu	:= 1
+		nPQueb	:= At(':',cArquivos)
+		If nPQueb > 0					//Windows!
+			While .T.
+				//Busca proxima quebra
+				nPQueb	:= At(':',cArquivos,nPAtu+3)		//Pula o primeiro c:\
+				nPFim	:= Rat(';',Left(cArquivos,nPQueb))	//+3 para pular o próprio c:\ do arquivo atual
+				If nPFim == 0
+					Exit
+				Else
+					aAdd(aArquivos,AllTrim(SubStr(cArquivos,nPAtu,nPFim-nPAtu)))
+					nPAtu	:= nPFim+1
+				EndIf
+			EndDo
+		ElseIf At(';/',cArquivos)		//Linux
+			While .T.
+				//Busca proxima quebra
+				nPFim	:= At(';/',cArquivos,nPAtu)
+				If nPFim == 0
+					Exit
+				Else
+					aAdd(aArquivos,SubStr(cArquivos,nPAtu,nPFim-nPAtu))
+					nPAtu	:= nPFim+1
+				EndIf
+			EndDo
+		EndIf
+		aAdd(aArquivos,AllTrim(SubStr(cArquivos,nPAtu)))	//Último arquivo ou 1 Arquivo
+	EndIf
+
+Return aArquivos
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfReadFile
+@description	Leitura de um arquivo de texto, sem limitação de 64k do MemoRead
+@autor			Cirilo Rocha
+@since			27/07/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfReadFile(cFile	AS Character)	AS Character
+	
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local oFile										AS Object
+	Local cRet	:= ''								AS Character
+	
+	//-- Parâmetros da Rotina -------------------------------------------------
+	ParamType 0		VAR cFile		AS Character
+	
+	//-------------------------------------------------------------------------
+	oFile := FWFileReader():New(cFile,/*xBreakLine*/)
+	oFile:SetBufferSize(50000)	//-- Aumento o buffer vai agilizar bastante a leitura
+	If (oFile:Open())
+		cRet	:= oFile:FullRead()
+	Else
+		FwAlertError('ERRO: Na leitura do arquivo '+cFile+CRLF+;
+					oFile:Error():Message)
+	EndIf
+	oFile:Close()		//-- Fecha arquivo
+	FreeObj(oFile)
+
+Return cRet
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfApagaSX
+@description	Apaga as tabelas SX temporárias
+@autor			Cirilo Rocha
+@since			02/08/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfApagaSX()							AS Logical
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local lRet		:= .T.							AS Logical
+	Local nX 										AS Numeric
+
+	//-------------------------------------------------------------------------
+	For nX := 1 to Len(aTabSX)
+		If 	TCCanOpen(aTabSX[nX]+'TMP') .And. ;
+			.Not. TCDelFile(aTabSX[nX]+'TMP')
+			
+			FwAlertError('Não foi possível apagar a tabela temporária '+aTabSX[nX]+'TMP.',_MsgLinha_)
+			Return .F.
+		EndIf
+	Next nX
+
+Return lRet
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfLerSDFBra
+@description	Faz a leitura dos dados do arquivo SDFBRA.TXT
+@autor			Cirilo Rocha
+@since			02/08/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfLerSDFBra()						AS Logical
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local cArqSX	:= ''							AS Character
+	Local lRet		:= .T.							AS Logical
+
+	//-- Lê o arquivo SDFBRA.TXT ----------------------------------------------
+	cArqSX := sfReadFile(cPathTmp+'SXSBRA.TXT')
+	If Empty(cArqSX)
+		FwAlertError(	'Arquivo SDFBRA.TXT vazio.',_MsgLinha_)
+		Return .F.
+	EndIf
+
+	//-------------------------------------------------------------------------
+	If lRet
+		nP		:= At('EM_PRJDES ', cArqSX)		//-- Posição do campo EM_PRJDES
+		If nP <= 0
+			nP		:= At('FL_DESCRI ', cArqSX)	//-- Posição do campo FL_DESCRI
+			If nP <= 0
+				FwAlertError(	'Arquivo SDFBRA.TXT NÃO possui o campo EM_PRJDES ou FL_DESCRI',_MsgLinha_)
+				Return .F.
+			Else
+				cPCK_DESC	:= RTrim(SubStr(cArqSX, nP+10,100))
+			EndIf
+		Else
+			cPCK_DESC	:= RTrim(SubStr(cArqSX, nP+10,100))
+		EndIf
+	EndIf
+	cTxtSXs	:= SubStr(cArqSX, Len(cArqSX) - Val(Right(cArqSX,12))-11 )		//-- Trailer do arquivo, contem as estruturas dos registros
+	
+	If lRet
+		nP		:= At('FL_DATE   ', cArqSX)		//-- Posição do campo FL_DATE
+		If nP <= 0
+			FwAlertError(	'Arquivo sdfbra.txt NÃO possui o campo FL_DATE',_MsgLinha_)
+			Return .F.
+		EndIf
+		dPCK_DTCRIA	:= StoD(RTrim(SubStr(cArqSX, nP+10, 10)))
+	EndIf
+
+	If lRet
+		nP		:= At('FL_TIME   ', cArqSX)		//-- Posição do campo FL_TIME
+		If nP <= 0
+			FwAlertError(	'Arquivo sdfbra.txt NÃO possui o campo FL_TIME',_MsgLinha_)
+			Return .F.
+		EndIf
+		cPCK_HRCRIA	:= RTrim(SubStr(cArqSX, nP+10, 8))
+	EndIf
+
+	If lRet
+		nP		:= At('EM_RELEASE', cArqSX)		//-- Posição do campo EM_RELEASE
+		If nP <= 0
+			nP		:= At('FL_CPMARK ', cArqSX)	//-- Posição do campo FL_CPMARK
+			If nP <= 0
+				FwAlertError(	'Arquivo SDFBRA.TXT NÃO possui o campo FL_CPMARK ou EM_RELEASE',_MsgLinha_)
+				Return .F.
+			Else
+				cPCK_RELEAS	:= '12.1.'+RTrim(SubStr(cArqSX, nP+10, 10))
+			EndIf
+		Else
+			cPCK_RELEAS	:= RTrim(SubStr(cArqSX, nP+10, 10))
+		EndIf
+	EndIf
+
+	If lRet
+		nP		:= At('EM_PRJVER ', cArqSX)		//-- Posição do campo EM_PRJVER
+		If nP <= 0
+			cPCK_VERSAO	:= '0001'
+		Else
+			cPCK_VERSAO	:= RTrim(SubStr(cArqSX, nP+10, 10))
+		EndIf
+	EndIf
+
+Return lRet
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfLerHLPDF
+@description	Faz a leitura dos arquivos de ajuda HLPDFPOR.TXT, HLPDFESP.TXT e HLPDFENG.TXT
+				 e armazena os dados no objeto Json jHelp.
+@autor			Cirilo Rocha
+@since			02/08/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfLerHLPDF()						AS Logical
+
+	//-- Modelo vazio de Json Help --------------------------------------------
+	BeginContent Var cJsonHLP AS Json 
+	{
+		"helpByIdiomJSON": true,
+		"fieldHelpPT-BR": "",
+		"fieldHelpEN": "",
+		"fieldHelpES": ""
+	}
+	EndContent
+
+	//-- Ler os arquivos de ajuda ----------------------------------------
+	If	.Not. sfGetHelp(nP_HLPPOR) .Or. ;
+		.Not. sfGetHelp(nP_HLPESP) .Or. ;
+		.Not. sfGetHelp(nP_HLPENG)
+
+		Return .F.
+	EndIf
+
+Return .T.
+//-------------------------------------------------------------------------------------------------
+Static Function sfGetHelp(nP_HELP	AS Numeric)		AS Logical
+	
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local cTagHelp									AS Character
+	Local cArqSX	:= ''							AS Character
+	Local cCampo	:= ''							AS Character
+	Local lHelp		:= .F.							AS Logical
+	Local nTamHelp	:= 0							AS Numeric
+	Local nPos		:= 0							AS Numeric
+
+	//-- Parâmetros da Rotina -------------------------------------------------
+	ParamType 0		VAR nP_HELP		AS Numeric
+
+	//-------------------------------------------------------------------------
+	Do Case
+		Case nP_HELP == nP_HLPPOR	;	cTagHelp	:= 'fieldHelpPT-BR'
+		Case nP_HELP == nP_HLPESP	;	cTagHelp	:= 'fieldHelpES'
+		Case nP_HELP == nP_HLPENG	;	cTagHelp	:= 'fieldHelpEN'
+	EndCase
+
+	If nP_HELP > 0
+		cArqSX := sfReadFile(aArquivos[nP_HELP])
+		If .Not. Empty(cArqSX)
+			nPos	:= 1
+			While nPos <= Len(cArqSX)
+				If lHelp
+					If nTamHelp > 0
+						If .Not. jHelp:hasProperty(cCampo)
+							jHelp[cCampo] := JsonObject():New()
+							jHelp[cCampo]:fromJson(cJsonHLP)
+						EndIf
+						jHelp[cCampo][cTagHelp]	:= AllTrim(SubStr(cArqSX, nPos, nTamHelp))
+					EndIf
+					nPos	+= nTamHelp
+					lHelp	:= .F.
+				Else
+					nTamHelp	:= Val(SubStr(cArqSX, nPos, 6))
+					cCampo		:= AllTrim(SubStr(cArqSX, nPos+7, 25))
+					nPos		+= 96
+					lHelp		:= .T.
+				EndIf
+			EndDo
+		EndIf
+	EndIf
+	
+Return .T.
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfAbreAmbiente
+@description	Faz a abertura do ambiente Protheus
+@autor			Cirilo Rocha
+@since			28/07/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
+	
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local lRet	:= .F.								AS Logical
+	Local cEmp	:= ''								AS Character
+	Local cFil	:= ''								AS Character
+	Local cMod	:= ''								AS Character
+	Local cUser	:= ''								AS Character
+	
+	Private aSM0									AS Array
+
+	//-------------------------------------------------------------------------
+	If .Not. sfSelEmp(@cEmp, @cFil, @cMod)
+		Return .F.
+	EndIf
+
+	RpcSetType(3)
+	FWMsgRun(,;
+			{||lRet := RPCSetEnv(	cEmp			,;	//01 Empresa
+									cFil			,;	//02 Filial
+									/*cEnvUser*/	,;	//03 Usuario
+									/*cEnvPass*/	,;	//04 Senha de Usuario
+									cMod			,;	//05 Modulo (3ch)
+									_NomeProg_		,;	//06 Nome da Funcao
+									/*aTables*/		,;	//07 Tabelas para abrir
+									/*lShowFinal*/	,;	//08 Alimenta a variavel lMsFinalAuto
+									.F.				,;	//09 Gera mensagem de erro ao ocorrer erro ao checar a licenca
+									.T.				,;	//10 Pega a primeira filial do arquivo SM0 quando não passar a filial e realiza a abertura dos SXs
+									.F.				);	//11 Faz a abertura da conexao com servidor do banco
+						},;
+			_MsgLinha_+" - Montando Ambiente",;
+			"Aguarde...")
+
+	If .Not. lRet
+		FwAlertWarning(	'Não foi possível montar o ambiente.',_MsgLinha_)
+		Return .F.
+	EndIf
+
+	//PRECISO ABRIR OS SX'S AQUI PARA FUNCIONAR CORRETAMENTE
+	SIX->(dbSetOrder(1))	;		SX1->(dbSetOrder(1))	;		SX2->(dbSetOrder(1))
+	SX3->(dbSetOrder(1))	;		SX5->(dbSetOrder(1))	;		SX6->(dbSetOrder(1))
+	SX7->(dbSetOrder(1))	;		SX9->(dbSetOrder(1))	;		SXA->(dbSetOrder(1))
+	SXB->(dbSetOrder(1))
+
+	If FWAuthUser(@cUser) 	//-- Solicita a senha do usuário
+		If .Not. FWIsAdmin(cUser) //-- Usuário é administrador
+			RpcClearEnv()
+			FwAlertError(	'Usuário sem acesso a rotina. Apenas administradores podem '+;
+							'utilizar a ferramenta.',_MsgLinha_)
+			Return .F.
+		EndIf
+	EndIf
+
+	__cUserID	:= cUser
+	cUserName	:= UsrRetName(__cUserID)	//-- Atualizo o nome de usuario
+	__cInternet	:= NIL			//-- Preciso colocar aqui para mostrar mensagens
+	lMsHelpAuto	:= .F.			//-- Preciso colocar aqui para mostrar mensagens
+
+	//-- Cria uma janela principal para trabalho
+	Public oMainWnd					AS Object
+	
+	oMainWnd := TWindow():New( 0, 0, 600, 800, _MsgLinha_+'-oMainWnd-'+_cVersao+' | '+_cDtVersao,,,,,,,,,,,,.T.,.T.,.T.,.T.,.T.)
+
+	oMainWnd:Activate( 'MAXIMIZED', oMainWnd:bLClicked, oMainWnd:bRClicked, oMainWnd:bMoved,;
+						oMainWnd:bResized, oMainWnd:bPainted, oMainWnd:bKeyDown, bFuncao ,;
+						,,,,,,,,,, oMainWnd:bLButtonUp )
+
+	RpcClearEnv()
+
+Return lRet
+//-------------------------------------------------------------------------------------------------
+Static Function sfSelEmp(	cEmp	AS Character,;	//-- @cEmp
+							cFil	AS Character,;	//-- @cFil
+							cMod	AS Character);		//-- @cMod
+												AS Logical
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local aCbMod	:= {}							AS Array
+	Local aModulos	:= RetModName(.T.)				AS Array
+	Local aSM0										AS Array
+    Local aCbxEmp	:= {}							AS Array
+	Local aPosEmp	:= {}							AS Array
+    Local cEmpAtu	:= ""							AS Character
+    Local lOk		:= .F.							AS Logical
+    Local nEmp										AS Numeric
+	Local nPos										AS Numeric
+    Local oCbxEmp									AS Object
+    Local oDlgEmp									AS Object
+    Local oFont										AS Object
+
+	//-------------------------------------------------------------------------
+	cMod	:= 'Faturamento'
+    oFont := TFont():New('Arial',, -11, .T., .T.)
+
+	//Ordena por nome do modulo
+	aSort ( aModulos, , , { |x,y| x[3] < y[3] } )
+
+	//-- Preenche combo
+	aEval(aModulos,{|x| aAdd(aCbMod,AllTrim(x[3])) })
+
+	OpenSm0()
+	aSM0	:= FWLoadSM0()
+    For nEmp := 1 to len(aSM0)
+        aAdd(aCbxEmp,aSM0[nEmp,SM0_GRPEMP] + ' - ' + Alltrim(aSM0[nEmp,SM0_NOME]) )
+		aAdd(aPosEmp,nEmp)
+		If 	Empty(cEmpAtu) .And. ;				//-- Priorizo usar a empresa teste se existir
+			aSM0[nEmp,SM0_GRPEMP] == '99'
+
+			cEmpAtu	:= aTail(aCbxEmp)
+		EndIf
+    Next nEmp
+
+	//-- Se não tem empresa teste inicializa a primeira empresa
+	If Empty(cEmpAtu)			;	cEmpAtu	:= aCbxEmp[1]		;	EndIf
+
+	//-------------------------------------------------------------------------
+	oDlgEmp = MsDialog():New( 0, 0, 180, 380, _MsgLinha_+" - Ambiente ",,,.F.,,,,,,.T.,,,.F.)
+		oDlgEmp:lEscClose := .F.
+		TSay():New( 010, 005,{||  "Selecione a Empresa:"},oDlgEmp,, oFont,.F.,.F.,.F.,.T.,,,,,.F.,.F.,.F.,.F.,.F.,.F. )
+		oCbxEmp := TComboBox():New( 018, 005, bSetGet(cEmpAtu), aCbxEmp, 180, 10, oDlgEmp,,,,,,.T.,,,.F.,,.F.,,, ,"cEmpAtu" )
+
+		TSay():New( 035, 005,{||  "Selecione o Módulo (licença):"},oDlgEmp,, oFont,.F.,.F.,.F.,.T.,,,,,.F.,.F.,.F.,.F.,.F.,.F. )
+		tComboBox():New(043,005,bSetGet(cMod),aCbMod,180,10,oDlgEmp,,,,,,.T.,,,,,,,,,'cMod')
+
+		TSay():New( 060, 120,{||  "Versão: "+_cVersao+' | '+_cDtVersao},oDlgEmp,,,.F.,.F.,.F.,.T.,,,,,.F.,.F.,.F.,.F.,.F.,.F. )
+		TButton():New( 070,145,"&Ok"       , oDlgEmp, {|| lOk := .T. , nEmp := oCbxEmp:nAt, oDlgEmp:End() }, 38, 14,,, .F., .t., .F.,, .F.,,, .F. )
+		TButton():New( 070,005,"&Cancelar" , oDlgEmp, {|| lOk := .F. , oDlgEmp:End() }, 38, 14,,, .F., .t., .F.,, .F.,,, .F. )
+	oDlgEmp:Activate( oDlgEmp:bLClicked, oDlgEmp:bMoved, oDlgEmp:bPainted,.T.,,,, oDlgEmp:bRClicked)
+
+	If lOK
+		cEmp	:= aSM0[aPosEmp[nEmp],SM0_GRPEMP]
+		cFil	:= aSM0[aPosEmp[nEmp],SM0_FILIAL]
+		
+		nPos		:= aScan(aCbMod,{|x| AllTrim(x) == AllTrim(cMod) })
+		If nPos == 0		;	cMod	:= 'FAT'
+		Else				;	cMod	:= Rtrim(SubStr(aModulos[nPos][2],5))
+		EndIf
+	EndIf
+
+Return lOk
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfExtrairDic
+@description	Extrair os arquivos SX do TXT
+@autor			Cirilo Rocha
+@since			02/08/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfExtrairDic()
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local nX										AS Numeric
+
+	ProcRegua(Len(aTabSX))
+	For nX := 1 to Len(aTabSX)
+		IncProc(aTabSX[nX])
+		If At(aTabSX[nX],cTxtSXs) > 0	//-- Verifica se a tabela SX existe no arquivo
+			FileByTxt(	.T.				,;	//lQuiet
+						aTabSX[nX]+'TMP',;	//cFile
+						'BRA'			,;	//cPais
+						aTabSX[nX]		,;	//cFor
+						.F.				,;	//lPyme
+										,;	//cFilReg
+										,;	//cPrefix
+						'TOPCONN'		,;	//cDriver
+						.T.				,;	//lFillArq
+						.T.				,;	//lCreate
+						cPathTmp		)	//cDirLoad
+		EndIf
+	Next nX
+
+Return
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfGravaProjeto
+@description	Grava as tabelas do projeto
+@autor			Cirilo Rocha
+@since			03/08/2025
+/*/
+//-------------------------------------------------------------------------------------------------
+Static Function sfGravaProjeto()					AS Logical
+	
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local cNumPrj	:= ''							AS Character
+	Local cTbPckCab	:= ''							AS Character
+	Local cCampo	:= ''							AS Character
+	Local lOK		:= .T.							AS Logical
+	Local nT, nC									AS Numeric
+
+	//-------------------------------------------------------------------------
+	cTbPckCab	:= MPSysTblPrefix() + __MPRealName(,"BCAST_PACKAGE")+"_"+cEmpAnt
+	dbUseArea(.T.,'TOPCONN',cTbPckCab,'MP_BCASTPACKAGE' , .T. ,.F. )
+	cNumPrj	:= MPLSNumGeneric( cTbPckCab,"PCK_CODIGO",Len(MP_BCASTPACKAGE->PCK_CODIGO), .T.)
+
+	//-------------------------------------------------------------------------
+	Begin Transaction
+		//-- Cria cabeçalho do projeto
+		RecLock('MP_BCASTPACKAGE',.T.)
+			MP_BCASTPACKAGE->PCK_CODIGO	:= cNumPrj
+			MP_BCASTPACKAGE->PCK_DESC	:= cPCK_DESC
+			MP_BCASTPACKAGE->PCK_STATUS	:= '1'
+			MP_BCASTPACKAGE->PCK_DTCRIA	:= dPCK_DTCRIA
+			MP_BCASTPACKAGE->PCK_HRCRIA	:= cPCK_HRCRIA
+			MP_BCASTPACKAGE->PCK_USER	:= __cUserID
+			MP_BCASTPACKAGE->PCK_VERSAO	:= cPCK_VERSAO
+			MP_BCASTPACKAGE->PCK_RELEAS	:= cPCK_RELEAS
+			MP_BCASTPACKAGE->PCK_ACCESS	:= '1'
+		MP_BCASTPACKAGE->(MsUnLock())
+
+		For nT := 1 to Len(aTabSX)
+			If TCCanOpen(aTabSX[nT]+'TMP')	//-- Verifica se a tabela SX existe
+				dbUseArea(.T.,'TOPCONN',aTabSX[nT]+'TMP','SXTMP',.T.,.F.)
+				SXTMP->(dbGoTop())
+				If SXTMP->(RecCount()) > 0	//-- Verifica se a tabela SX tem registros
+					If .Not. TCCanOpen(aTabSX[nT]+'X31'+cEmpAnt)
+						lOk	:= .F.
+						FwAlertError(	'<H3>ERRO: Tabela: '+aTabSX[nT]+'X31'+cEmpAnt+' ainda não criada.'+CRLF+;
+										'ABRA A TELA DO CADASTRO DE PROJETOS (APCFG300) PARA CRIAR AS TABELAS </H3>',_MsgLinha_)
+						Exit
+					EndIf
+					dbUseArea(.T.,'TOPCONN',aTabSX[nT]+'X31'+cEmpAnt,'SXPCT',.T.,.F.)
+					While SXTMP->(!EOF())
+						RecLock('SXPCT',.T.)
+							For nC := 1 to SXPCT->(FCount())
+								cCampo	:= SXPCT->(FieldName(nC))
+								If SXTMP->(FieldPos(cCampo)) > 0 
+									SXPCT->(FieldPut(nC,SXTMP->(_FieldGet(cCampo))))
+								EndIf
+							Next nC
+
+							SXPCT->ID_PACKAGE	:= cNumPrj	
+							If aTabSX[nT] == 'SX3'
+								If jHelp:hasProperty(SXPCT->(_FieldGet('X3_CAMPO')))
+									SXPCT->(_FieldPut('X3_HELP',jHelp[SXPCT->(_FieldGet('X3_CAMPO'))]:ToJson()))
+								EndIf
+							ElseIf aTabSX[nT] == 'SX1'
+								If 	.Not. Empty(SXPCT->(_FieldGet('X1_HELP'))) .And. ;
+									jHelp:hasProperty(SXPCT->(_FieldGet('X1_HELP')))
+
+									SXPCT->(_FieldPut('X1_HELP',jHelp[SXPCT->(_FieldGet('X1_HELP'))]:ToJson()))
+								ElseIf jHelp:hasProperty('.'+SXPCT->(_FieldGet('X1_GRUPO'))+SXPCT->(_FieldGet('X1_ORDEM'))+'.')
+									SXPCT->(_FieldPut('X1_HELP',jHelp['.'+SXPCT->(_FieldGet('X1_GRUPO'))+SXPCT->(_FieldGet('X1_ORDEM'))+'.']:ToJson()))
+								EndIf
+							EndIf
+						SXPCT->(MsUnLock())
+						SXTMP->(dbSkip())
+					EndDo
+					SXPCT->(dbCloseArea())
+				EndIf
+				SXTMP->(dbCloseArea())
+			EndIf
+		Next nT
+	End Transaction
+
+	//-------------------------------------------------------------------------
+	MP_BCASTPACKAGE->(dbCloseArea())
+	If lOK
+		MPLSNumConfirm()	//-- Confirma numeração bloqueada LS
+	Else
+		MPLSRollBack()		//-- Rollback da numeração LS
+	EndIf
+
+Return lOK
