@@ -2,18 +2,8 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.16'						AS Character
-Static _cDtVersao	:= '18/09/2025'					AS Character
-
-#DEFINE _LINHA_			StrZero(ProcLine(),5)
-#DEFINE _NomeProg_		RetFileName(ProcSource())
-#DEFINE _MsgLinha_		_NomeProg_+'('+_LINHA_+')'
-
-#xTranslate _FieldGet(<cCampo>) => ;
-	FieldGet(FieldPos(<cCampo>))
-
-#xTranslate _FieldPut(<cCampo>,<uConteudo>) => ;
-	FieldPut(FieldPos(<cCampo>),<uConteudo>)
+Static _cVersao		:= '1.20'						AS Character
+Static _cDtVersao	:= '29/11/2025'					AS Character
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -22,7 +12,27 @@ Static _cDtVersao	:= '18/09/2025'					AS Character
 @since			03/08/2025
 @obs			Arquivos de menu ainda não são tratados (MNUPACK.TXT), pode importar diretamente pelo CFG
 				Se as tabelas X31## não existirem ocorrerá um erro, elas precisam existir previamente
+@url			https://github.com/cirilorocha/CXRestPrj
 /*/
+/*--------------------------------------- LICENÇA DE USO ----------------------------------------*/
+//O SOFTWARE É FORNECIDO "TAL COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU IMPLÍCITA,
+//INCLUINDO MAS NÃO SE LIMITANDO A GARANTIAS DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UMA FINALIDADE
+//ESPECÍFICA E NÃO INFRACÇÃO. EM NENHUM CASO OS AUTORES OU TITULARES DE DIREITOS AUTORAIS
+//SERÃO RESPONSÁVEIS POR QUALQUER REIVINDICAÇÃO, DANOS OU OUTRA RESPONSABILIDADE, SEJA 
+//EM AÇÃO DE CONTRATO OU QUALQUER OUTRA FORMA, PROVENIENTE, FORA OU RELACIONADO AO SOFTWARE. 
+//
+//                    *** USE A VONTADE, POR SUA CONTA E RISCO ***
+//-------------------------------------------------------------------------------------------------
+#DEFINE _LINHA_			StrZero(ProcLine(),5)
+#DEFINE _NomeProg_		RetFileName(ProcSource())
+#Define _MsgLinha_		SubStr(_NomeProg_,Rat('.',_NomeProg_)+1)+'('+_LINHA_+')'
+
+#xTranslate _FieldGet(<cCampo>) => ;
+	FieldGet(FieldPos(<cCampo>))
+
+#xTranslate _FieldPut(<cCampo>,<uConteudo>) => ;
+	FieldPut(FieldPos(<cCampo>),<uConteudo>)
+
 //-------------------------------------------------------------------------------------------------
 User Function CXRestPrj()
 
@@ -60,6 +70,8 @@ Static Function sfRestPrj()							AS Logical
 	Private nP_HLPENG	:= 0						AS Numeric
 	Private cTxtSXs		:= ''						AS Character
 	Private cJsonHLP	:= ''						AS Character
+
+	oMainWnd:cTitle(Left(oMainWnd:cTitle,IIF('['$oMainWnd:cTitle,At('[',oMainWnd:cTitle)-1,99))+'['+_NomeProg_+'_v'+_cVersao+' | '+_cDtVersao+']')		//-- Mostra versão no título da janela
 
 	//-- Apaga as tabelas SX temporárias --------------------------------------
 	If .Not. sfApagaSX()
@@ -126,11 +138,22 @@ Static Function sfRestPrj()							AS Logical
 
 	//-- Grava as tabelas do projeto -------------------------------------
 	If lOK
-		FwMsgRun(,{|| sfGravaProjeto()},_MsgLinha_+' - Gravando projeto','Aguarde...')
+		FwMsgRun(,{|| lOK	:= sfGravaProjeto()},_MsgLinha_+' - Gravando projeto','Aguarde...')
 	EndIf
 
 	//-- apagar diretório temporário -----------------------------------
 	FWMsgRun(,{|| FWDirRemove(cPathTmp,.F.,.T.) },_MsgLinha_+' - Apagando arquivos temporários','Aguarde...')	//-- Apaga o diretório temporário
+
+	If lOK
+		FWAlertSuccess(	'Projeto restaurado com sucesso!' ;
+				+CRLF+	'Descrição: '+cPCK_DESC	;
+				+CRLF+	'Data Criação: '+DToC(dPCK_DTCRIA)+' '+cPCK_HRCRIA ;
+				+CRLF+	'Versão: '+cPCK_VERSAO ;
+				+CRLF+	'Releases: '+cPCK_RELEAS ;
+				,_MsgLinha_)
+	Else
+		FwAlertError('Erro na restauração do projeto.',_MsgLinha_)
+	EndIf
 
 Return
 
@@ -158,12 +181,13 @@ Static Function sfGetProjeto()						AS Character
 	//-------------------------------------------------------------------------
 	cDir	:= fwGetProfString(cProfSecao,cProfChave,cDirInicial,.T.)	//-- Carrega último caminho utilizado
 
-	cRet    := tFileDialog(	cMascara											,;	//01 cMascara
-							_MsgLinha_+' Os pacotes para atualização: '			,;	//02 cTitulo
-							1													,;	//03 nDef
-							IIf(ExistDir(cDir),cDir,cDirInicial)				,;	//04 cDirInicial
-							lSalvar												,;	//05 lSalvar
-							nOpcoes	    										)	//06 nOpcoes
+	cRet    := tFileDialog(	cMascara											;	//01 cMascara
+						,	_MsgLinha_+' Os pacotes para atualização: '			;	//02 cTitulo
+						,	1													;	//03 nDef
+						,	IIf(ExistDir(cDir),cDir,cDirInicial)				;	//04 cDirInicial
+						,	lSalvar												;	//05 lSalvar
+						,	nOpcoes	    										;	//06 nOpcoes
+						)
 	
 	//-- Tratamento de erros para WebApp (pode não ser necessário no futuro)
 	aRet	:= sfSeparaArq(cRet)
@@ -412,10 +436,10 @@ Static Function sfLerHLPDF()						AS Logical
 	//-- Modelo vazio de Json Help --------------------------------------------
 	BeginContent Var cJsonHLP AS Json 
 	{
-		"helpByIdiomJSON": true,
-		"fieldHelpPT-BR": "",
-		"fieldHelpEN": "",
-		"fieldHelpES": ""
+		"helpByIdiomJSON": true
+	,	"fieldHelpPT-BR": ''
+	,	"fieldHelpEN": ''
+	,	"fieldHelpES": ''
 	}
 	EndContent
 
@@ -501,18 +525,18 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 
 	RpcSetType(3)
 	FWMsgRun(,;
-			{||lRet := RPCSetEnv(	cEmp			,;	//01 Empresa
-									cFil			,;	//02 Filial
-									/*cEnvUser*/	,;	//03 Usuario
-									/*cEnvPass*/	,;	//04 Senha de Usuario
-									cMod			,;	//05 Modulo (3ch)
-									_NomeProg_		,;	//06 Nome da Funcao
-									/*aTables*/		,;	//07 Tabelas para abrir
-									/*lShowFinal*/	,;	//08 Alimenta a variavel lMsFinalAuto
-									.F.				,;	//09 Gera mensagem de erro ao ocorrer erro ao checar a licenca
-									.T.				,;	//10 Pega a primeira filial do arquivo SM0 quando não passar a filial e realiza a abertura dos SXs
-									.F.				);	//11 Faz a abertura da conexao com servidor do banco
-						},;
+			{||lRet := RPCSetEnv(	cEmp			;	//01 Empresa
+								,	cFil			;	//02 Filial
+								,	/*cEnvUser*/	;	//03 Usuario
+								,	/*cEnvPass*/	;	//04 Senha de Usuario
+								,	cMod			;	//05 Modulo (3ch)
+								,	_NomeProg_		;	//06 Nome da Funcao
+								,	/*aTables*/		;	//07 Tabelas para abrir
+								,	/*lShowFinal*/	;	//08 Alimenta a variavel lMsFinalAuto
+								,	.F.				;	//09 Gera mensagem de erro ao ocorrer erro ao checar a licenca
+								,	.T.				;	//10 Pega a primeira filial do arquivo SM0 quando não passar a filial e realiza a abertura dos SXs
+								,	.F.				;	//11 Faz a abertura da conexao com servidor do banco
+							)},;
 			_MsgLinha_+" - Montando Ambiente",;
 			"Aguarde...")
 
@@ -522,10 +546,8 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 	EndIf
 
 	//PRECISO ABRIR OS SX'S AQUI PARA FUNCIONAR CORRETAMENTE
-	SIX->(dbSetOrder(1))	;		SX1->(dbSetOrder(1))	;		SX2->(dbSetOrder(1))
-	SX3->(dbSetOrder(1))	;		SX5->(dbSetOrder(1))	;		SX6->(dbSetOrder(1))
-	SX7->(dbSetOrder(1))	;		SX9->(dbSetOrder(1))	;		SXA->(dbSetOrder(1))
-	SXB->(dbSetOrder(1))
+	OpenSm0()	//Abre o sigamat
+	aEval({'SIX','SX1','SX2','SX3','SX5','SX6','SX7','SX9','SXA','SXB','SXG','XXA','XAU','XAT'},{|x| (x)->(dbSetOrder(1)) })
 
 	If FWAuthUser(@cUser) 	//-- Solicita a senha do usuário
 		If .Not. FWIsAdmin(cUser) //-- Usuário é administrador
@@ -536,15 +558,15 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 		EndIf
 	EndIf
 
-	__cUserID	:= cUser
-	cUserName	:= UsrRetName(__cUserID)	//-- Atualizo o nome de usuario
+//	__cUserID	:= cUser
+//	cUserName	:= UsrRetName(__cUserID)	//-- Atualizo o nome de usuario
 	__cInternet	:= NIL			//-- Preciso colocar aqui para mostrar mensagens
 	lMsHelpAuto	:= .F.			//-- Preciso colocar aqui para mostrar mensagens
 
 	//-- Cria uma janela principal para trabalho
 	Public oMainWnd					AS Object
 	
-	oMainWnd := TWindow():New( 0, 0, 600, 800, _MsgLinha_+'-oMainWnd-'+_cVersao+' | '+_cDtVersao,,,,,,,,,,,,.T.,.T.,.T.,.T.,.T.)
+	oMainWnd := TWindow():New( 0, 0, 600, 800, _MsgLinha_+'-oMainWnd[]',,,,,,,,,,,,.T.,.T.,.T.,.T.,.T.)
 
 	oMainWnd:Activate( 'MAXIMIZED', oMainWnd:bLClicked, oMainWnd:bRClicked, oMainWnd:bMoved,;
 						oMainWnd:bResized, oMainWnd:bPainted, oMainWnd:bKeyDown, bFuncao ,;
@@ -554,10 +576,10 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 
 Return lRet
 //-------------------------------------------------------------------------------------------------
-Static Function sfSelEmp(	cEmp	AS Character,;	//-- @cEmp
-							cFil	AS Character,;	//-- @cFil
-							cMod	AS Character);		//-- @cMod
-												AS Logical
+Static Function sfSelEmp(	cEmp	AS Character;	//-- @cEmp
+						,	cFil	AS Character;	//-- @cFil
+						,	cMod	AS Character;	//-- @cMod
+						)							AS Logical
 
 	//-- Declaração de Variáveis ----------------------------------------------
 	Local aCbMod	:= {}							AS Array
@@ -640,17 +662,18 @@ Static Function sfExtrairDic()
 	For nX := 1 to Len(aTabSX)
 		IncProc(aTabSX[nX])
 		If At(aTabSX[nX],cTxtSXs) > 0	//-- Verifica se a tabela SX existe no arquivo
-			FileByTxt(	.T.				,;	//lQuiet
-						aTabSX[nX]+'TMP',;	//cFile
-						'BRA'			,;	//cPais
-						aTabSX[nX]		,;	//cFor
-						.F.				,;	//lPyme
-										,;	//cFilReg
-										,;	//cPrefix
-						'TOPCONN'		,;	//cDriver
-						.T.				,;	//lFillArq
-						.T.				,;	//lCreate
-						cPathTmp		)	//cDirLoad
+			FileByTxt(	.T.				;	//lQuiet
+					,	aTabSX[nX]+'TMP';	//cFile
+					,	'BRA'			;	//cPais
+					,	aTabSX[nX]		;	//cFor
+					,	.F.				;	//lPyme
+					,					;	//cFilReg
+					,					;	//cPrefix
+					,	'TOPCONN'		;	//cDriver
+					,	.T.				;	//lFillArq
+					,	.T.				;	//lCreate
+					,	cPathTmp		;	//cDirLoad
+					)
 		EndIf
 	Next nX
 
@@ -686,7 +709,7 @@ Static Function sfGravaProjeto()					AS Logical
 			MP_BCASTPACKAGE->PCK_STATUS	:= '1'
 			MP_BCASTPACKAGE->PCK_DTCRIA	:= dPCK_DTCRIA
 			MP_BCASTPACKAGE->PCK_HRCRIA	:= cPCK_HRCRIA
-			MP_BCASTPACKAGE->PCK_USER	:= __cUserID
+			MP_BCASTPACKAGE->PCK_USER	:= IIF(Empty(__cUserID), '000000', __cUserID)
 			MP_BCASTPACKAGE->PCK_VERSAO	:= cPCK_VERSAO
 			MP_BCASTPACKAGE->PCK_RELEAS	:= cPCK_RELEAS
 			MP_BCASTPACKAGE->PCK_ACCESS	:= '1'
