@@ -2,8 +2,9 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.22'						AS Character
-Static _cDtVersao	:= '14/01/2025'					AS Character
+Static _cVersao		:= '1.24'						AS Character
+Static _cDtVersao	:= '14/04/2026'					AS Character
+//TODO RESTAURAR A PARTIR DE ZIPS
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -185,17 +186,21 @@ Static Function sfGetProjeto()						AS Character
 	Local lSalvar	:= .F.							AS Logical
 	Local nOpcoes	:= nOR(GETF_LOCALHARD,GETF_NETWORKDRIVE,GETF_MULTISELECT)	AS Numeric
 
-	Local cDrive,cDir,cFile,cExten					AS Character
+	Local cDrive									AS Character
+	Local cDir										AS Character
+	Local cFile										AS Character
+	Local cExten									AS Character
 
 	//-------------------------------------------------------------------------
 	cDir	:= fwGetProfString(cProfSecao,cProfChave,cDirInicial,.T.)	//-- Carrega último caminho utilizado
 
-	cRet    := tFileDialog(	cMascara											;	//01 cMascara
-						,	_MsgLinha_+' Os pacotes para atualização: '			;	//02 cTitulo
-						,	1													;	//03 nDef
-						,	IIf(ExistDir(cDir),cDir,cDirInicial)				;	//04 cDirInicial
-						,	lSalvar												;	//05 lSalvar
-						,	nOpcoes	    										;	//06 nOpcoes
+	cRet    := tFileDialog(	
+				/*01*/		cMascara											;	//cMascara
+				/*02*/	,	_MsgLinha_+' Os pacotes para atualização: '			;	//cTitulo
+				/*03*/	,	1													;	//nDef
+				/*04*/	,	IIf(ExistDir(cDir),cDir,cDirInicial)				;	//cDirInicial
+				/*05*/	,	lSalvar												;	//lSalvar
+				/*06*/	,	nOpcoes	    										;	//nOpcoes
 						)
 	
 	//-- Tratamento de erros para WebApp (pode não ser necessário no futuro)
@@ -534,17 +539,18 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 
 	RpcSetType(3)
 	FWMsgRun(,;
-			{||lRet := RPCSetEnv(	cEmp			;	//01 Empresa
-								,	cFil			;	//02 Filial
-								,	/*cEnvUser*/	;	//03 Usuario
-								,	/*cEnvPass*/	;	//04 Senha de Usuario
-								,	cMod			;	//05 Modulo (3ch)
-								,	_NomeProg_		;	//06 Nome da Funcao
-								,	/*aTables*/		;	//07 Tabelas para abrir
-								,	/*lShowFinal*/	;	//08 Alimenta a variavel lMsFinalAuto
-								,	.F.				;	//09 Gera mensagem de erro ao ocorrer erro ao checar a licenca
-								,	.T.				;	//10 Pega a primeira filial do arquivo SM0 quando não passar a filial e realiza a abertura dos SXs
-								,	.F.				;	//11 Faz a abertura da conexao com servidor do banco
+			{||lRet := RPCSetEnv(	
+						/*01*/	 cEmp			;	//Empresa
+						/*02*/	,cFil			;	//Filial
+						/*03*/	,/*cEnvUser*/	;	//Usuario
+						/*04*/	,/*cEnvPass*/	;	//Senha de Usuario
+						/*05*/	,cMod			;	//Modulo (3ch)
+						/*06*/	,_NomeProg_		;	//Nome da Funcao
+						/*07*/	,/*aTables*/	;	//Tabelas para abrir
+						/*08*/	,/*lShowFinal*/	;	//Alimenta a variavel lMsFinalAuto
+						/*09*/	,.F.			;	//Gera mensagem de erro ao ocorrer erro ao checar a licenca
+						/*10*/	,.T.			;	//Pega a primeira filial do arquivo SM0 quando não passar a filial e realiza a abertura dos SXs
+						/*11*/	,.F.			;	//Faz a abertura da conexao com servidor do banco
 							)},;
 			_MsgLinha_+" - Montando Ambiente",;
 			"Aguarde...")
@@ -588,9 +594,9 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 
 Return lRet
 //-------------------------------------------------------------------------------------------------
-Static Function sfSelEmp(	cEmp	AS Character;	//-- @cEmp
-						,	cFil	AS Character;	//-- @cFil
-						,	cMod	AS Character;	//-- @cMod
+Static Function sfSelEmp(cEmp	AS Character;	//-- @cEmp
+						,cFil	AS Character;	//-- @cFil
+						,cMod	AS Character;	//-- @cMod
 						)							AS Logical
 
 	//-- Declaração de Variáveis ----------------------------------------------
@@ -620,12 +626,14 @@ Static Function sfSelEmp(	cEmp	AS Character;	//-- @cEmp
 	OpenSm0()
 	aSM0	:= FWLoadSM0()
     For nEmp := 1 to len(aSM0)
-        aAdd(aCbxEmp,aSM0[nEmp,SM0_GRPEMP] + ' - ' + Alltrim(aSM0[nEmp,SM0_NOME]) )
-		aAdd(aPosEmp,nEmp)
-		If 	Empty(cEmpAtu) .And. ;				//-- Priorizo usar a empresa teste se existir
-			aSM0[nEmp,SM0_GRPEMP] == '99'
+		If aScan(aCbxEmp,{|x| Left(x,Len(aSM0[nEmp][SM0_GRPEMP])) == aSM0[nEmp][SM0_GRPEMP] }) == 0
+			aAdd(aCbxEmp,aSM0[nEmp][SM0_GRPEMP] + ' - ' + Alltrim(aSM0[nEmp][SM0_NOME]) )
+			aAdd(aPosEmp,nEmp)
+			If 	Empty(cEmpAtu) .And. ;				//-- Priorizo usar a empresa teste se existir
+				aSM0[nEmp,SM0_GRPEMP] == '99'
 
-			cEmpAtu	:= aTail(aCbxEmp)
+				cEmpAtu	:= aTail(aCbxEmp)
+			EndIf
 		EndIf
     Next nEmp
 
