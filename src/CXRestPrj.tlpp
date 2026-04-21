@@ -2,9 +2,8 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.24'						AS Character
-Static _cDtVersao	:= '14/04/2026'					AS Character
-//TODO RESTAURAR A PARTIR DE ZIPS
+Static _cVersao		:= '1.30'						AS Character
+Static _cDtVersao	:= '21/04/2026'					AS Character
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -80,6 +79,22 @@ Static Function sfRestPrj()							AS Logical
 		Return .F.
 	EndIf
 
+	//-- Apaga o diretório temporário, caso exista ----------------------------
+	If 		ExistDir(cPathTmp)					;
+	.And.	.Not. FWDirRemove(cPathTmp,.F.,.T.)	;
+
+		FwAlertError(	'Não foi possível remover o diretório temporário '+cPathTmp,_MsgLinha_)
+		Return .F.
+	EndIf
+
+	//-- Cria o diretório temporário ------------------------------------------
+	If 		.Not. ExistDir(cPathTmp) 		;
+	.And.	.Not. FWMakeDir(cPathTmp,.T.)	;
+		
+		FwAlertError(	'Não foi possível criar o diretório temporário '+cPathTmp,_MsgLinha_)
+		Return .F.
+	EndIf
+
 	//-- Seleciona os pacotes de atualização ----------------------------------
 	cArquivos	:= sfGetProjeto()
 	If Empty(cArquivos)
@@ -87,6 +102,11 @@ Static Function sfRestPrj()							AS Logical
 		Return .F.
 	EndIf
 	aArquivos	:= sfSeparaArq(cArquivos)
+
+	If Upper(StrTran(aArquivos[1],FileNoExt(aArquivos[1]))) == '.ZIP'	//-- Extensão do arquivo (Trata nomes com ponto .)
+		aArquivos	:= sfExtrairZip(aArquivos[1])
+		If Empty()(aArquivos)	;	Return .F.	;	EndIf
+	EndIf
 
 	If ( nP_SDFBRA := aScan(aArquivos, {|x| Right(Upper(x),10) == 'SDFBRA.TXT' })) == 0
 		FwAlertError('Arquivo SDFBRA.TXT não encontrado.',_MsgLinha_)
@@ -104,22 +124,21 @@ Static Function sfRestPrj()							AS Logical
 	nP_HLPENG := aScan(aArquivos, {|x| Right(Upper(x),12) == 'HLPDFENG.TXT' })
 
 	//-- Copiar arquivo sdfbra.txt para o diretório temporário
-	If 	.Not. ExistDir(cPathTmp) .And. ;
-		.Not. FWMakeDir( cPathTmp , .T.)		//-- Cria o diretório temporário
-		lOK := .F.
-	ElseIf 	File(cPathTmp+'SXSBRA.TXT') .And. ;
-			fErase(cPathTmp+'SXSBRA.TXT')		//-- Apaga o arquivo temporário se existir
-		FwAlertError('Não foi possível apagar o arquivo temporário SXSBRA.TXT.',_MsgLinha_)
-		lOK := .F.
-	Else
-		FWMsgRun(,{|| lOK	:= CpyT2S( aArquivos[nP_SDFBRA], cPathTmp ,.F.,.F.,200000)},_MsgLinha_+' - Copiando arquivo SDFBRA.TXT','Aguarde...')
+	If 		lOK	;
+	.And.	.Not. ( cPathTmp $ aArquivos[nP_SDFBRA] )	;
+
+		FWMsgRun(,{|| lOK	:= CpyT2S( aArquivos[nP_SDFBRA], cPathTmp ,.F.,.F.,500000)},_MsgLinha_+' - Copiando arquivo SDFBRA.TXT','Aguarde...')
 		If 	.Not. lOK
 			FwAlertError('Não foi possível copiar o arquivo SDFBRA.TXT para o diretório temporário.',_MsgLinha_)
 			lOK := .F.
-		ElseIf 	fRename(cPathTmp+'SDFBRA.TXT', cPathTmp+'SXSBRA.TXT')
-			FwAlertError('Não foi possível renomear o arquivo SDFBRA.TXT para SXSBRA.TXT.',_MsgLinha_)
-			lOK := .F.
 		EndIf
+	EndIf
+
+	If 		lOK	;
+	.And.	fRename(cPathTmp+'SDFBRA.TXT', cPathTmp+'SXSBRA.TXT')	;
+
+		FwAlertError('Não foi possível renomear o arquivo SDFBRA.TXT para SXSBRA.TXT.',_MsgLinha_)
+		lOK := .F.
 	EndIf
 
 	//-- Lê o arquivo SDFBRA.TXT ----------------------------------------------
@@ -182,7 +201,7 @@ Static Function sfGetProjeto()						AS Character
 	Local cDirInicial	:= 'C:\Protheus\'			AS Character
 	Local cProfSecao:= RetFileName(ProcSource())	AS Character
 	Local cProfChave:= ProcName()					AS Character
-	Local cMascara	:= '*.txt'						AS Character	//-- Mascara e Salvar não devem ser informados com diretórios e tFileDialog
+	Local cMascara	:= 'Zip (*.zip)|*.zip|Texto (*.txt)|*.txt'		AS Character	//-- Mascara e Salvar não devem ser informados com diretórios e tFileDialog
 	Local lSalvar	:= .F.							AS Logical
 	Local nOpcoes	:= nOR(GETF_LOCALHARD,GETF_NETWORKDRIVE,GETF_MULTISELECT)	AS Numeric
 
@@ -194,7 +213,7 @@ Static Function sfGetProjeto()						AS Character
 	//-------------------------------------------------------------------------
 	cDir	:= fwGetProfString(cProfSecao,cProfChave,cDirInicial,.T.)	//-- Carrega último caminho utilizado
 
-	cRet    := tFileDialog(	
+	cRet    := tFileDialog(														;
 				/*01*/		cMascara											;	//cMascara
 				/*02*/	,	_MsgLinha_+' Os pacotes para atualização: '			;	//cTitulo
 				/*03*/	,	1													;	//nDef
@@ -539,7 +558,7 @@ Static Function sfAbreAmbiente(bFuncao	AS CodeBlock)		AS Logical
 
 	RpcSetType(3)
 	FWMsgRun(,;
-			{||lRet := RPCSetEnv(	
+			{||lRet := RPCSetEnv(				;
 						/*01*/	 cEmp			;	//Empresa
 						/*02*/	,cFil			;	//Filial
 						/*03*/	,/*cEnvUser*/	;	//Usuario
@@ -789,3 +808,37 @@ Static Function sfGravaProjeto()					AS Logical
 	EndIf
 
 Return lOK
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfExtrairZip
+@description	Preciso copiar o arquivo para um diretório temporário para conseguir fazer a extração
+					porque com o WebApp ele copia para uma pasta temporária no servidor, e por
+					enquanto as funções ZIP ainda não conseguem ler arquivos diretamente dessa pasta
+@autor			Cirilo Rocha
+@since			21/04/2026
+-------------------------------------------------------------------------------------------------*/
+Static Function sfExtrairZip(cArquivo	AS Character)		AS Array
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local aArquivos	:= {}							AS Array
+	Local cFileTmp	:= ''							AS Character
+	
+	//-- Parâmetros da Rotina -------------------------------------------------
+	ParamType 0		VAR cArquivo		AS Character
+
+	//-- Copia o arquivo para o diretório temporário --------------------------
+	cFileTmp	:= cPathTmp + RTrim(ExtractFile(cArquivo))
+	If .Not. CpyT2S(cArquivo,cPathTmp,.F.,.F.,500000)		//-- Buffer de 500k melhora a performance
+		FwAlertError(	'Erro ao copiar arquivo para o servidor.',_MsgLinha_)
+		Return {}
+	EndIf
+
+	If FUnZip( cFileTmp , cPathTmp ) <> 0
+		FwAlertError(	'Erro ao extrair o pacote.'+cArquivo,_MsgLinha_)
+		Return {}
+	EndIf
+
+	aArquivos	:= Directory(cPathTmp+'*.txt')	//-- Lista os arquivos extraídos para processar depois
+	aEval(aArquivos,{|x,nP| aArquivos[nP] := cPathTmp+x[1] } )
+
+Return aArquivos
