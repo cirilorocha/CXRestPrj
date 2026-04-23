@@ -2,8 +2,8 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.30'						AS Character
-Static _cDtVersao	:= '21/04/2026'					AS Character
+Static _cVersao		:= '1.31'						AS Character
+Static _cDtVersao	:= '23/04/2026'					AS Character
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -259,7 +259,7 @@ Return cRet
 @description	Função para quebrar a lista de arquivos da função tFileDialog, quando multiseleção
 				 para conseguir identificar arquivos que contenham ; no nome.                     
 @autor			Cirilo Rocha
-@since			28/07/2025
+@since			23/04/2027
 /*/
 //-------------------------------------------------------------------------------------------------
 Static Function sfSeparaArq(cArquivos	AS Character);	//01 cArquivos
@@ -286,28 +286,24 @@ Static Function sfSeparaArq(cArquivos	AS Character);	//01 cArquivos
 	//			"/tmp/rgperc29 - 2022-12-08-17;18;29.sql"
 
 	//---------------------------------------------------------------------------------------------
-	If At(' | ',cArquivos)	//cGetFile antiga
+	If At(' | ',cArquivos) > 0	//-- cGetFile antiga
 		aArquivos	:= StrTokArr2(cArquivos,' | ',.F.)
 	Else
 		nPAtu	:= 1
-		nPQueb	:= At(':',cArquivos)
-		If nPQueb > 0					//Windows!
+		If ( nPQueb	:= At(':',cArquivos) ) > 0				//Windows!
 			While .T.
 				//Busca proxima quebra
-				nPQueb	:= At(':',cArquivos,nPAtu+3)		//Pula o primeiro c:\
-				nPFim	:= Rat(';',Left(cArquivos,nPQueb))	//+3 para pular o próprio c:\ do arquivo atual
-				If nPFim == 0
+				nPQueb	:= At(':',cArquivos,nPAtu+3)		//-- Pula o primeiro c:\
+				If ( nPFim := Rat(';',Left(cArquivos,nPQueb)) ) == 0	//+3 para pular o próprio c:\ do arquivo atual
 					Exit
 				Else
 					aAdd(aArquivos,AllTrim(SubStr(cArquivos,nPAtu,nPFim-nPAtu)))
 					nPAtu	:= nPFim+1
 				EndIf
 			EndDo
-		ElseIf At(';/',cArquivos)		//Linux
+		ElseIf ( nPQueb	:= At(';/',cArquivos) ) > 0			//Linux
 			While .T.
-				//Busca proxima quebra
-				nPFim	:= At(';/',cArquivos,nPAtu)
-				If nPFim == 0
+				If ( nPFim := At(';/',cArquivos,nPAtu) ) == 0		//--Busca proxima quebra
 					Exit
 				Else
 					aAdd(aArquivos,SubStr(cArquivos,nPAtu,nPFim-nPAtu))
