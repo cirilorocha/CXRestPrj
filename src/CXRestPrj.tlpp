@@ -2,8 +2,8 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.31'						AS Character
-Static _cDtVersao	:= '23/04/2026'					AS Character
+Static _cVersao		:= '1.32'						AS Character
+Static _cDtVersao	:= '05/05/2026'					AS Character
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -466,9 +466,9 @@ Static Function sfLerHLPDF()						AS Logical
 	BeginContent Var cJsonHLP AS Json 
 	{
 		"helpByIdiomJSON": true
-	,	"fieldHelpPT-BR": ''
-	,	"fieldHelpEN": ''
-	,	"fieldHelpES": ''
+	,	"fieldHelpPT-BR": ""
+	,	"fieldHelpEN": ""
+	,	"fieldHelpES": ""
 	}
 	EndContent
 
