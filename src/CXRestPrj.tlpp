@@ -2,8 +2,8 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.32'						AS Character
-Static _cDtVersao	:= '05/05/2026'					AS Character
+Static _cVersao		:= '1.35'						AS Character
+Static _cDtVersao	:= '06/05/2026'					AS Character
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -57,6 +57,8 @@ Static Function sfRestPrj()							AS Logical
 						,'XAM' }					AS Array
 	Private aArquivos	:= {}						AS Array
 	Private jHelp		:= JsonObject():New()		AS Json
+	Private jFlagSX5	:= JsonObject():New()		AS Json
+	Private jFlagSX6	:= JsonObject():New()		AS Json
 
 	Private cPCK_DESC	:= ''						AS Character
 	Private dPCK_DTCRIA	:= CtoD('')					AS Date
@@ -450,6 +452,10 @@ Static Function sfLerSDFBra()						AS Logical
 		EndIf
 	EndIf
 
+	If lRet
+		sfBuscaCpoAux(cArqSX)
+	EndIf
+
 Return lRet
 
 //-------------------------------------------------------------------------------------------------
@@ -771,7 +777,8 @@ Static Function sfGravaProjeto()					AS Logical
 								EndIf
 							Next nC
 
-							SXPCT->ID_PACKAGE	:= cNumPrj	
+							SXPCT->ID_PACKAGE	:= cNumPrj
+							SXPCT->PF_L_A_G		:= sfGetFlag()
 							If aTabSX[nT] == 'SX3'
 								If jHelp:hasProperty(SXPCT->(_FieldGet('X3_CAMPO')))
 									SXPCT->(_FieldPut('X3_HELP',jHelp[SXPCT->(_FieldGet('X3_CAMPO'))]:ToJson()))
@@ -784,6 +791,8 @@ Static Function sfGravaProjeto()					AS Logical
 								ElseIf jHelp:hasProperty('.'+SXPCT->(_FieldGet('X1_GRUPO'))+SXPCT->(_FieldGet('X1_ORDEM'))+'.')
 									SXPCT->(_FieldPut('X1_HELP',jHelp['.'+SXPCT->(_FieldGet('X1_GRUPO'))+SXPCT->(_FieldGet('X1_ORDEM'))+'.']:ToJson()))
 								EndIf
+							ElseIf aTabSX[nT] == 'SX6' .And. SXPCT->PF_L_A_G == '1'	//-- Só tem flag de alteração para o SX6
+								SXPCT->X6_DEFENG := '#@&>'
 							EndIf
 						SXPCT->(MsUnLock())
 						SXTMP->(dbSkip())
@@ -838,3 +847,104 @@ Static Function sfExtrairZip(cArquivo	AS Character)		AS Array
 	aEval(aArquivos,{|x,nP| aArquivos[nP] := cPathTmp+x[1] } )
 
 Return aArquivos
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfGetFlag
+@description	Retorna a tag da operação dos dicionários para utilização com gestor de projetos
+@autor			Cirilo Rocha
+@since			06/05/2026
+-------------------------------------------------------------------------------------------------*/
+Static Function sfGetFlag()						AS Character
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local cFlag	:= ''							AS Character
+
+	//-- EXCLUSÃO -------------------------------------------------------------
+	If	( SXPCT->(FieldPos('PROPRI')) > 0		.And. SXPCT->PROPRI == '*'		);	//-- SIX
+	.Or.( SXPCT->(FieldPos('X2_PROPRI')) > 0	.And. SXPCT->X2_PROPRI == '*'	);	//-- SX2
+	.Or.( SXPCT->(FieldPos('X3_PROPRI')) > 0	.And. SXPCT->X3_PROPRI == '*'	);	//-- SX3
+	.Or.( SXPCT->(FieldPos('X5_PROPRI')) > 0	.And. SXPCT->X5_PROPRI == '*'	);	//-- SX5
+	.Or.( SXPCT->(FieldPos('X6_PROPRI')) > 0	.And. SXPCT->X6_PROPRI == '*'	);	//-- SX6
+	.Or.( SXPCT->(FieldPos('X7_PROPRI')) > 0	.And. SXPCT->X7_PROPRI == '*'	);	//-- SX7
+	.Or.( SXPCT->(FieldPos('XA_PROPRI')) > 0	.And. SXPCT->XA_PROPRI == '*'	);	//-- SXA
+	.Or.( SXPCT->(FieldPos('XB_PROPRI')) > 0	.And. SXPCT->XB_PROPRI == '*'	);	//-- SXB
+	.Or.( SXPCT->(FieldPos('XB_CONTEM')) > 0	.And. SXPCT->XB_CONTEM == '*'	);	//-- SXB
+	.Or.( SXPCT->(FieldPos('XQ_PROPRI')) > 0	.And. SXPCT->XQ_PROPRI == '*'	);	//-- SXQ
+	.Or.( SXPCT->(FieldPos('XAL_PROPRI')) > 0 	.And. SXPCT->XAL_PROPRI == '*'	);	//-- XAL
+	.Or.( SXPCT->(FieldPos('XAM_PROPRI')) > 0 	.And. SXPCT->XAM_PROPRI == '*'	)	//-- XAM
+
+		cFlag	:= '2'
+	//-- ALTERAÇÃO ------------------------------------------------------------
+	ElseIf  ( SXPCT->(FieldPos('X6_DEFENG')) > 0 .And. SXPCT->X6_DEFENG == '#@&>'	);	//-- SX6 (alterar parâmetros)
+
+		cFlag	:= '1'
+
+	//-- DEFAULT SE VIER ------------------------------------------------------
+	ElseIf .Not. Empty(SXPCT->PF_L_A_G)
+		cFlag	:= SXPCT->PF_L_A_G
+
+	//-- TRATAMENTO ESPECIAL SX6 ----------------------------------------------
+	ElseIf ( SXPCT->(FieldPos('X6_VAR')) > 0 .And. jFlagSX6:hasProperty( AllTrim(SXPCT->X6_VAR) ) )	//-- Sobrescrever SX6
+		cFlag	:= jFlagSX6[ AllTrim(SXPCT->X6_VAR) ]
+
+	//-- TRATAMENTO ESPECIAL SX5 ----------------------------------------------
+	ElseIf ( SXPCT->(FieldPos('X5_TABELA')) > 0 .And. jFlagSX5:hasProperty( AllTrim(SXPCT->(X5_TABELA+X5_CHAVE)) ) )	//-- Flag SX5
+		cFlag	:= jFlagSX5[ AllTrim(SXPCT->(X5_TABELA+X5_CHAVE)) ]
+
+	//-- DEFAULT - INCLUSÃO ---------------------------------------------------
+	Else
+
+		cFlag	:= '0'
+	EndIf
+
+Return cFlag
+
+//-------------------------------------------------------------------------------------------------
+/*/{Protheus.doc} sfBuscaCpoAux
+@description	Identifica operações auxiliares no SX6 e SX5 que não vem dentro da tabela SX#X3
+@autor			Cirilo Rocha
+@since			06/05/2026
+-------------------------------------------------------------------------------------------------*/
+Static Function sfBuscaCpoAux(cArqSX	AS Character)
+
+	//-- Declaração de Variáveis ----------------------------------------------
+	Local nP	:= 0								AS Numeric
+	Local cChave									AS Character
+
+	//-------------------------------------------------------------------------
+	nP	:= 0
+	While .T.
+		nP := At('EM_X6OVER', cArqSX, nP+1)
+		If nP <= 0
+			Exit
+		Else
+			cChave := RTrim(SubStr(cArqSX, nP+10, 20))
+			jFlagSX6[cChave] := '1'	//-- Sobrescrever SX6
+		EndIf
+	EndDo
+
+	//-------------------------------------------------------------------------
+	nP	:= 0
+	While .T.
+		nP := At('EM_X5OVER', cArqSX, nP+1)
+		If nP <= 0
+			Exit
+		Else
+			cChave := RTrim(SubStr(cArqSX, nP+10, 20))
+			jFlagSX5[cChave] := '1'	//-- Sobrescrever SX5
+		EndIf
+	EndDo
+
+	//-------------------------------------------------------------------------
+	nP	:= 0
+	While .T.
+		nP := At('EM_X5DEL', cArqSX, nP+1)
+		If nP <= 0
+			Exit
+		Else
+			cChave := RTrim(SubStr(cArqSX, nP+10, 20))
+			jFlagSX5[cChave] := '2'	//-- Apagar SX5
+		EndIf
+	EndDo
+
+Return
