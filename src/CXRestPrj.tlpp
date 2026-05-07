@@ -2,8 +2,8 @@
 #INCLUDE 'Totvs.ch'
 #INCLUDE 'ParmType.ch'
 
-Static _cVersao		:= '1.35'						AS Character
-Static _cDtVersao	:= '06/05/2026'					AS Character
+Static _cVersao		:= '1.36'						AS Character
+Static _cDtVersao	:= '07/05/2026'					AS Character
 
 //-------------------------------------------------------------------------------------------------
 /*/{Protheus.doc} CXRestPrj
@@ -173,7 +173,10 @@ Static Function sfRestPrj()							AS Logical
 	EndIf
 
 	//-- apagar diretório temporário -----------------------------------
-	FWMsgRun(,{|| FWDirRemove(cPathTmp,.F.,.T.) },_MsgLinha_+' - Apagando arquivos temporários','Aguarde...')	//-- Apaga o diretório temporário
+	FWMsgRun(,{|| FWDirRemove(cPathTmp,.F.,.T.) },_MsgLinha_+' - Apagando arquivos temporários','Aguarde...')
+
+	//-- Apaga as tabelas SX temporárias --------------------------------------
+	FWMsgRun(,{|| sfApagaSX() },_MsgLinha_+' - Apagando tabelas temporárias','Aguarde...')
 
 	If lOK
 		FWAlertSuccess(	'Projeto restaurado com sucesso!' ;
