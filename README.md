@@ -8,10 +8,11 @@ Esta ferramenta permite importar e restaurar completamente dicionários de dados
 ## ✨ Funcionalidades Principais
 
 ### 🔄 Importação Completa de Projetos
-- **Leitura de pacotes UpdDistr**: Processa arquivos `.TXT` gerados pelo Protheus
+- **Leitura de pacotes UpdDistr**: Processa arquivos `.TXT` gerados pelo Protheus ou um arquivo `.ZIP` com os arquivos de texto dentro dele (na raiz).
 - **Estruturas SX**: Importa todas as tabelas de dicionário (SIX, SX1-SX7, SXA, SXB, SXQ, XXA, XAL, XAM)
 - **Metadados do projeto**: Extrai informações como descrição, versão, release e data de criação
 - **Sistema de versionamento**: Mantém controle de versões dos projetos restaurados
+- **Releases Diferentes**: Permite a importação entre releases diferente (testado com 2410 e 2510 com sucesso)
 
 ### 🌐 Suporte Multilíngue para Helps
 - **Português (BR)**: Arquivo `HLPDFPOR.TXT`
@@ -22,7 +23,7 @@ Esta ferramenta permite importar e restaurar completamente dicionários de dados
 
 ### Pré-requisitos
 1. **Tabelas X31** já criadas no ambiente (execute APCFG300 antes se necessário)
-2. **Arquivos de pacote** (.TXT) do UpdDistr
+2. **Arquivos de pacote** (.TXT) do UpdDistr ou dentro de um arquivo .ZIP
 
 ### Execução
 Chamar a rotina diretamente na tela de programa incial do Protheus
@@ -50,6 +51,14 @@ Chamar a rotina diretamente na tela de programa incial do Protheus
 1. **Menus não suportados**: Arquivos `MNUPACK.TXT` devem ser importados manualmente pelo CFG
 2. **Tabelas X31 obrigatórias**: Devem existir previamente no ambiente
 3. **Apenas administradores**: Restrição de segurança para execução
+
+## Histórico
+
+- Ajustes quando migrando de releases diferentes
+- Melhoria para ler um arquivo ZIP com os arquivos de texto dentro, para facilitar o armazenamento, apenas 1 arquivo com tudo
+- Correção na importação de Helps
+- Tratamento para operações de exclusão de dados e alteração do SX6 e SX5
+- Ajustes para mitigar o erro na aplicação a quente, deixando mais compatível com essa funcionaidade da release 2510
 
 ## 📄 Licença
 
